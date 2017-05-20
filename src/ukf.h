@@ -35,6 +35,8 @@ public:
   ///* radar measurement noise matrix
   MatrixXd R_radar;
 
+  MatrixXd H_laser_;
+
   ///* laser measurement noise matrix
   MatrixXd R_laser;
 

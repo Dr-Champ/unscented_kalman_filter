@@ -63,6 +63,12 @@ UKF::UKF() {
   lambda_ = 3 - n_aug_;
   NIS_radar_ = 0;
   NIS_laser_ = 0;
+
+  // This is only needed if we use linear Kalman filter with laser
+  /*H_laser_ = MatrixXd(2, 5);
+  H_laser_ << 1, 0, 0, 0, 0,
+              0, 1, 0, 0, 0;*/
+
   R_radar = MatrixXd(3, 3);
   R_radar << std_radr_ * std_radr_, 0, 0,
              0, std_radphi_ * std_radphi_, 0,
@@ -187,7 +193,7 @@ void UKF::Prediction(double delta_t) {
   if (lltOfPaug.info() == Eigen::NumericalIssue) {
     // Based on https://discussions.udacity.com/t/numerical-instability-of-the-implementation/230449
     // At this point no state variables have been modified yet. Just throw exception and reset the 
-    // P_ outside
+    // P_ on the outside
     cout << "LLT failed!" << endl;
     throw std::range_error("LLT failed");
   }
@@ -282,8 +288,24 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
-  // project sigma points from state to measurement space
   int n_laser = 2;
+
+  // Use linear Kalman filter for laser .. doesn't make a difference though
+  /*double px = meas_package.raw_measurements_(0);
+  double py = meas_package.raw_measurements_(1);
+  VectorXd z = VectorXd(n_laser);
+  z << px, py;
+
+  VectorXd z_innovation = z - (H_laser_ * x_);
+  MatrixXd S = (H_laser_ * P_ * H_laser_.transpose()) + R_laser;
+  MatrixXd K = P_ * H_laser_.transpose() * S.inverse();
+  x_ = x_ + (K * z_innovation);
+  long x_size = x_.size();
+  MatrixXd I = MatrixXd::Identity(x_size, x_size);
+  P_ = (I - K * H_laser_) * P_;*/
+
+  // Use Unscented Kalman filter for layer
+  // project sigma points from state to measurement space
   MatrixXd Z_sig = MatrixXd(n_laser, (2 * n_aug_) + 1);
   for (int i = 0; i < (2 * n_aug_) + 1; i++) {
     VectorXd current_xsig_pred = Xsig_pred_.col(i);
