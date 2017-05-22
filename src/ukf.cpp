@@ -14,7 +14,7 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = true;
+  use_laser_ = false;
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
@@ -29,10 +29,10 @@ UKF::UKF() {
   P_ = MatrixXd(n_x_, n_x_);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 0.2;
+  std_a_ = 5;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 0.55; 
+  std_yawdd_ = 0.2; 
 
   // Laser measurement noise standard deviation position1 in m
   std_laspx_ = 0.15;
@@ -65,13 +65,16 @@ UKF::UKF() {
   lambda_ = 3 - n_aug_;
   NIS_radar_ = 0;
   NIS_laser_ = 0;
+
   H_laser_ = MatrixXd(2, 5);
   H_laser_ << 1, 0, 0, 0, 0,
               0, 1, 0, 0, 0;
+
   R_radar = MatrixXd(3, 3);
   R_radar << std_radr_ * std_radr_, 0, 0,
              0, std_radphi_ * std_radphi_, 0,
              0, 0, std_radrd_ * std_radrd_;
+
   R_laser = MatrixXd(2, 2);
   R_laser << std_laspx_ * std_laspx_, 0,
              0, std_laspy_ * std_laspy_;
@@ -94,6 +97,8 @@ UKF::UKF() {
     weights_(i) = weight;
     weights_p_(i) = weight;
   }
+
+  cout << "weights_ " << weights_ << endl;
   
 }
 
@@ -124,12 +129,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       double py = ro * sin(phi);
       x_ << px, py, ro_d, 0, 0;
     }
-    
+    // we are less certain about yaw and yawd than other states which are measurable
     P_ << 1.0, 0, 0, 0, 0,
           0, 1.0, 0, 0, 0,
           0, 0, 1.0, 0, 0,
-          0, 0, 0, 1.0, 0,
-          0, 0, 0, 0, 1.0;
+          0, 0, 0, 2.0, 0, 
+          0, 0, 0, 0, 2.0;
     time_us_ = meas_package.timestamp_;
     is_initialized_ = true;
     return;
@@ -144,7 +149,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       Prediction(delta_t);
     }
     catch (std::range_error e) {
-      // reset the P_ to ensure being positive definite
+      // reset the P_ to ensure being positive definite. 
       P_ << 1.0, 0, 0, 0, 0,
             0, 1.0, 0, 0, 0,
             0, 0, 1.0, 0, 0,
@@ -220,7 +225,7 @@ void UKF::Prediction(double delta_t) {
   // compute predicted mean 
   x_.fill(0.0);
   for (int i = 0; i < (2 * n_aug_) + 1; i++) {
-    x_ += weights_(i) * Xsig_pred_.col(i);
+    x_ = x_ + weights_(i) * Xsig_pred_.col(i);
   }
   x_(3) = normaliseAngle(x_(3));
 
@@ -229,7 +234,7 @@ void UKF::Prediction(double delta_t) {
   for (int i = 0; i < (2 * n_aug_) + 1; i++) {
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
     x_diff(3) = normaliseAngle(x_diff(3));
-    P_ += weights_p_(i) * x_diff * x_diff.transpose();
+    P_ = P_ + weights_p_(i) * x_diff * x_diff.transpose();
   }  
 
   cout << "Predicted x " << endl << x_ << endl;
@@ -250,24 +255,24 @@ VectorXd UKF::computePrediction(const VectorXd &x_a, double delta_t) {
 
   // add incremental part
   if (fabs(yawd) < zero_div_threshold) {
-    x_pred(0) += v * delta_t * cos(yaw);
-    x_pred(1) += v * delta_t * sin(yaw);
+    x_pred(0) = x_pred(0) + v * delta_t * cos(yaw);
+    x_pred(1) = x_pred(1) + v * delta_t * sin(yaw);
   }
   else {
     double yaw_pred = yaw + yawd * delta_t;
-    x_pred(0) += (v / yawd) * (sin(yaw_pred) - sin(yaw));
-    x_pred(1) += (v / yawd) * (cos(yaw) - cos(yaw_pred));
+    x_pred(0) = x_pred(0) + (v / yawd) * (sin(yaw_pred) - sin(yaw));
+    x_pred(1) = x_pred(1) + (v / yawd) * (cos(yaw) - cos(yaw_pred));
   }
 
-  x_pred(3) += yawd * delta_t;
+  x_pred(3) = x_pred(3) + yawd * delta_t;
 
   // add the noise part
   double temp_t = 0.5 * delta_t * delta_t;
-  x_pred(0) += temp_t * nu_a * cos(yaw);
-  x_pred(1) += temp_t * nu_a * sin(yaw);
-  x_pred(2) += nu_a * delta_t;
-  x_pred(3) += temp_t * nu_yawdd;
-  x_pred(4) += nu_yawdd * delta_t;
+  x_pred(0) = x_pred(0) + temp_t * nu_a * cos(yaw);
+  x_pred(1) = x_pred(1) + temp_t * nu_a * sin(yaw);
+  x_pred(2) = x_pred(2) + nu_a * delta_t;
+  x_pred(3) = x_pred(3) + temp_t * nu_yawdd;
+  x_pred(4) = x_pred(4) + nu_yawdd * delta_t;
 
   x_pred(3) = normaliseAngle(x_pred(3));
 
@@ -340,7 +345,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   VectorXd z_mean = VectorXd(n_radar);
   z_mean.fill(0.0);
   for (int i = 0; i < (2 * n_aug_) + 1; i++) {
-    z_mean += weights_(i) * Z_sig.col(i);
+    z_mean = z_mean + weights_(i) * Z_sig.col(i);
   }
   z_mean(1) = normaliseAngle(z_mean(1));
 
@@ -352,13 +357,13 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   for (int i = 0; i < (2 * n_aug_) + 1; i++) {
     VectorXd z_diff = Z_sig.col(i) - z_mean;
     z_diff(1) = normaliseAngle(z_diff(1));
-    S += weights_p_(i) * z_diff * z_diff.transpose();
+    S = S + weights_p_(i) * z_diff * z_diff.transpose();
 
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
     x_diff(3) = normaliseAngle(x_diff(3));
-    T += weights_p_(i) * x_diff * z_diff.transpose();
+    T = T + weights_p_(i) * x_diff * z_diff.transpose();
   }
-  S += R_radar;
+  S = S + R_radar;
 
   // compute Kalman gain K
   MatrixXd Si = S.inverse();
@@ -367,24 +372,23 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   // Update state x_
   VectorXd z = meas_package.raw_measurements_;
   VectorXd z_innovation = z - z_mean;
-  x_ += K * z_innovation;
+  x_ = x_ + K * z_innovation;
   x_(3) = normaliseAngle(x_(3));
 
   // Update covariance matrix P_
-  P_ -= K * S * K.transpose();
+  P_ = P_ - K * S * K.transpose();
 
   // Compute NIS
   NIS_radar_ = z_innovation.transpose() * Si * z_innovation;
 
   cout << "updating from radar " << endl 
-      << "weights_ " << weights_ << endl
-      << "Xsig_pred_: " << Xsig_pred_ << endl
-      << "Z_sig " << Z_sig << endl
+      << "Xsig_pred_: " << endl << Xsig_pred_ << endl
+      << "Z_sig " << endl << Z_sig << endl
       << "z: " << z << endl 
       << "z_innovation: "<< z_innovation << endl 
-      << "T: " << T << endl
-      << "S: " << S << endl
-      << "K: " << K << endl
+      << "T: " << endl << T << endl
+      << "S: " << endl << S << endl
+      << "K: " << endl << K << endl
       << "NIS: " << NIS_radar_ << endl; 
 }
 
@@ -411,8 +415,8 @@ VectorXd UKF::projectStateToRadarSpace(const VectorXd &x) {
 }
 
 double UKF::normaliseAngle(double zeta) {
-  while (zeta > M_PI) {zeta -= 2 * M_PI;}
-  while (zeta < -M_PI) {zeta += 2 * M_PI;}
+  while (zeta > M_PI) {zeta = zeta - 2 * M_PI;}
+  while (zeta < -M_PI) {zeta = zeta + 2 * M_PI;}
   return zeta;
 }
 
