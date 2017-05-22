@@ -14,14 +14,8 @@ using Eigen::VectorXd;
 class UKF {
 public:
 
-  ///* initially set to false, set to true in first call of ProcessMeasurement
+    ///* initially set to false, set to true in first call of ProcessMeasurement
   bool is_initialized_;
-
-  ///* if this is false, laser measurements will be ignored (except for init)
-  bool use_laser_;
-
-  ///* if this is false, radar measurements will be ignored (except for init)
-  bool use_radar_;
 
   ///* state vector: [pos1 pos2 vel_abs yaw_angle yaw_rate] in SI units and rad
   VectorXd x_;
@@ -31,14 +25,6 @@ public:
 
   ///* predicted sigma points matrix
   MatrixXd Xsig_pred_;
-
-  ///* radar measurement noise matrix
-  MatrixXd R_radar;
-
-  MatrixXd H_laser_;
-
-  ///* laser measurement noise matrix
-  MatrixXd R_laser;
 
   ///* time when the state is true, in us
   long long time_us_;
@@ -62,16 +48,16 @@ public:
   double std_radphi_;
 
   ///* Radar measurement noise standard deviation radius change in m/s
-  double std_radrd_ ;
+  double std_radrd_;
 
   ///* Weights of sigma points
   VectorXd weights_;
 
-  ///* Weights of sigma points for updating P_
-  VectorXd weights_p_;
-
   ///* State dimension
   int n_x_;
+
+  //set measurement dimension, radar can measure r, phi, and r_dot
+  int n_z_;
 
   ///* Augmented state dimension
   int n_aug_;
@@ -85,11 +71,18 @@ public:
   ///* the current NIS for laser
   double NIS_laser_;
 
-  ///* threshold to prevent division by zero
-  double zero_div_threshold;
+  MatrixXd R_;
 
-  ///* threshold to prevent too small sensor reading
-  double min_sensor_value;
+  MatrixXd H_;
+
+  Tools tools;
+
+  struct PredictedMeasurement
+  {
+    MatrixXd Zsig;
+    VectorXd z_pred;
+    MatrixXd S;
+  };
 
   /**
    * Constructor
@@ -115,11 +108,6 @@ public:
   void Prediction(double delta_t);
 
   /**
-   * Map an augmented state vector into the normal state space
-   */
-  VectorXd computePrediction(const VectorXd &x_a, double delta_t);
-
-  /**
    * Updates the state and the state covariance matrix using a laser measurement
    * @param meas_package The measurement at k+1
    */
@@ -131,15 +119,17 @@ public:
    */
   void UpdateRadar(MeasurementPackage meas_package);
 
-  /**
-   * Project a vector in state space into a vector in Radar measurement space
-   */
-  VectorXd projectStateToRadarSpace(const VectorXd &x);
+private:
 
-  /**
-   * Ensure the given angle is within -pi to pi range.
-   */
-  double normaliseAngle(double zeta);
+  void initializeState(MeasurementPackage meas_package);
+
+  MatrixXd augmentSigmaPoints();
+
+  void predictSigmaPoints(double dt, MatrixXd Xsig_aug);
+
+  void predictMeanAndCovariance();
+
+  PredictedMeasurement predictMeasurement();
 };
 
 #endif /* UKF_H */
