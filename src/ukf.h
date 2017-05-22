@@ -88,6 +88,9 @@ public:
   ///* threshold to prevent division by zero
   double zero_div_threshold;
 
+  ///* threshold to prevent too small sensor reading
+  double min_sensor_value;
+
   /**
    * Constructor
    */
@@ -136,7 +139,7 @@ public:
   /**
    * Ensure the given angle is within -pi to pi range.
    */
-  double normaliseAngle(double& zeta);
+  double normaliseAngle(double zeta);
 };
 
 #endif /* UKF_H */
